@@ -1,0 +1,316 @@
+---
+title: "EDA & Dataprep Bike Trip Share"
+author: "Malvin"
+date: "11/2/2021"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+# Data Preparation & EDA for Cyclistic Trip Share Dataset
+
+Cyclistic a bike-share company with a fleet of 5,824 geotracked bicycles and locked into around 692 stations across Chicago. The bikes can be unlocked from one station and returned to other station in the system anytime. 
+
+To using the bike share, Cyclistic offers pricing plans to customer: single ride passes, full ride passes and annual memberships. Customers who purchased single day or full day passes are referred to as casual riders. Customers who purchase annual memberships are Cyclistic members.
+
+----------------------------------------------------------------------------------------------------------
+
+## Business Task
+
+The company have concluded that annual members are much profitable than casual riders. For this reason, the company wants to increase the annual members. Instead of approaching a new customers, the company's marketing decide to convert casual riders into annual members.
+
+By understanding what and how both group differs in using bike-share, the next marketing strategy to fulfill the goals can be determined.
+
+
+## Data Source
+
+1. The source of data: https://divvy-tripdata.s3.amazonaws.com/index.html
+2. The dataset is from real case made by **Motivational International Inc.** under this license (https://www.divvybikes.com/data-license-agreement) using for study since the Cyclistic is a fictional company.
+3. The dataset consist of ride id, the type of used bike, start and end of riding period, name and id of the start/ finish station including the coordinate and the membership categories.
+4. Around 14% of data have missing value of station name because the location is not detected as listed station based on recorded location coordinate. 
+
+----------------------------------------------------------------------------------------------------------
+
+## Data Preparation Process
+
+For this dataset, preparing and cleaning is by using **RStudio**
+
+The dataset is stored in : "D:/Data Analytics Course/Data/Cyclistic Data/Annual Data"
+
+### Load the installed library
+
+Libraries used for this analytics process are: tidyverse, lubridate, ggplot2
+
+```{r}
+library(tidyverse)  #helps wrangle data
+library(lubridate)  #helps wrangle date attributes
+library(ggplot2)  #helps visualize data
+```
+
+### Prepare the dataset
+
+Cycistic dataset consist of monthly trip data from the last 12 months.
+
+Upload all monthly dataset
+
+```{r}
+oct_2020 <- read_csv("102020.csv")
+nov_2020 <- read_csv("112020.csv")
+dec_2020 <- read_csv("122020.csv")
+jan_2021 <- read_csv("012021.csv")
+feb_2021 <- read_csv("022021.csv")
+mar_2021 <- read_csv("032021.csv")
+apr_2021 <- read_csv("042021.csv")
+may_2021 <- read_csv("052021.csv")
+jun_2021 <- read_csv("062021.csv")
+jul_2021 <- read_csv("072021.csv")
+aug_2021 <- read_csv("082021.csv")
+sep_2021 <- read_csv("092021.csv")
+```
+
+After all dataset uploaded, the column names should be checked to make sure there all the dataframes have exact column names to avoid error while joining all of them later.
+
+```{r}
+colnames(oct_2020)
+colnames(nov_2020)
+colnames(dec_2020)
+colnames(jan_2021)
+colnames(feb_2021)
+colnames(mar_2021)
+colnames(apr_2021)
+colnames(may_2021)
+colnames(jun_2021)
+colnames(jul_2021)
+colnames(aug_2021)
+colnames(sep_2021)
+```
+
+Besides the column names, the dataframes structure should be inspected to avoid incongruencies
+
+```{r}
+str(oct_2020)
+str(nov_2020)
+str(dec_2020)
+str(jan_2021)
+str(feb_2021)
+str(mar_2021)
+str(apr_2021)
+str(may_2021)
+str(jun_2021)
+str(jul_2021)
+str(aug_2021)
+str(sep_2021)
+```
+
+Notice, that `oct_2020` and `nov_2020` dataframes have different data type in `start_station_id` and `end_station_id`. Instead of `chr` like the others dataframes, both of them have `num` for `start_station_id` and `end_station_id` column. So, the data type should be changed first.
+
+```{r}
+oct_2020 <- mutate(oct_2020, start_station_id = as.character(start_station_id)
+                   ,end_station_id = as.character(end_station_id)) 
+nov_2020 <- mutate(nov_2020, start_station_id = as.character(start_station_id)
+                   ,end_station_id = as.character(end_station_id)) 
+```
+
+Now, the montly dataframes will be stacked to make the analysis process easier.
+
+```{r}
+all_trips <- bind_rows(oct_2020,nov_2020,dec_2020,jan_2021,feb_2021,mar_2021,apr_2021,may_2021,jun_2021,jul_2021,
+                       aug_2021,sep_2021)
+```
+
+Since the coodinate of the station will not needed in this EDA process, the `start_lat`, `start_lng`, `end_lat`,and  `end_lng` column will be deleted.
+
+```{r}
+all_trips <- all_trips %>%  
+  select(-c(start_lat, start_lng, end_lat, end_lng))
+```
+
+Now, the annual dataframe is ready. Before the analysis process, some cleaning process is needed for the dataframe.
+
+---------------------------------------------------------------------------------------------------------
+
+### Clean up and Add Data to Prepare for Analysis
+
+First of all, the newly created dataframe should be inspected again for some error or missing values.
+
+```{r}
+colnames(all_trips)  #List of column names
+nrow(all_trips)  #How many rows are in data frame?
+dim(all_trips)  #Dimensions of the data frame?
+head(all_trips)  #See the first 6 rows of data frame.  Also tail(all_trips)
+str(all_trips)  #See list of columns and data types (numeric, character, etc)
+summary(all_trips)  #Statistical summary of data. Mainly for numerics
+```
+
+There are some problem we will need to fix:
+
+1. The data can only be aggregated at the ride-level, which is too granular. We will want to add some additional columns of data -- such as day, month, year -- that provide additional opportunities to aggregate the data.
+2. We will want to add a calculated field for length of ride. We will add "ride_length" to the entire dataframe.
+3. There are some rides where tripduration shows up as negative, including several hundred rides where Cyclistic took bikes out of circulation for Quality Control reasons. We will want to delete these rides.
+
+Add `date`, `day`, `month`, `year` and `day_of_week`for each records based on `started_at` column to the dataframe.
+
+```{r}
+all_trips$date <- as.Date(all_trips$started_at) #The default format is yyyy-mm-dd
+all_trips$month <- format(as.Date(all_trips$date), "%m")
+all_trips$day <- format(as.Date(all_trips$date), "%d")
+all_trips$year <- format(as.Date(all_trips$date), "%Y")
+all_trips$day_of_week <- weekdays(all_trips$started_at)
+```
+
+Add `ride_length` for calculation of all trips (in minutes).
+
+```{r}
+all_trips$ride_length <- round(difftime(all_trips$ended_at, all_trips$started_at,
+                                  units = 'min'),1)
+```
+
+Now, inspect the structure of all columns.
+
+```{r}
+str(all_trips)
+```
+
+We need to convert `ride_length` to `numeric` so we can run calculations on data.
+
+```{r}
+all_trips$ride_length <- as.numeric(as.character(all_trips$ride_length))
+is.numeric(all_trips$ride_length)
+```
+
+The dataframe includes a few hundred entries when bikes were taken out of docks and checked for quality by Cyclistic or `ride_length` was negative. 
+We will create a new version of the dataframe since data is being removed.
+
+```{r}
+all_trips_v2 <- subset(all_trips, ride_length > 0)
+all_trips_v3 <- subset(all_trips_v2, start_station_name != 'HR HQ')
+```
+
+---------------------------------------------------------------------------------------------------------
+
+## Analysis Cyclistic Share Trip Dataset
+
+Statistical summary for `ride_length` (all figures in minutes).
+
+```{r}
+summary(all_trips_v3$ride_length)
+```
+
+Comparing `ride_length` between casual and annual members.
+
+```{r}
+aggregate(all_trips_v3$ride_length ~ all_trips_v3$member_casual, FUN = mean)
+aggregate(all_trips_v3$ride_length ~ all_trips_v3$member_casual, FUN = median)
+aggregate(all_trips_v3$ride_length ~ all_trips_v3$member_casual, FUN = max)
+aggregate(all_trips_v3$ride_length ~ all_trips_v3$member_casual, FUN = min)
+```
+See the average `ride_length` by each day for members vs casual users
+
+```{r}
+all_trips_v3$day_of_week <- ordered(all_trips_v3$day_of_week, levels=c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"))
+aggregate(all_trips_v3$ride_length ~ all_trips_v3$member_casual + all_trips_v3$day_of_week, FUN = mean)
+```
+
+We need to analyze ridership data by type and weekday.
+
+```{r}
+all_trips_v3 %>% 
+  mutate(weekday = wday(started_at, label = TRUE)) %>%  #creates weekday field using wday()
+  group_by(member_casual, weekday) %>%  #groups by usertype and weekday
+  summarise(number_of_rides = n()							#calculates the number of rides and average duration 
+            ,average_duration = mean(ride_length)) %>% 		# calculates the average duration
+  arrange(member_casual, weekday)								# sorts
+```
+
+### Visualize Data
+
+The number of rides by rider type
+
+```{r}
+all_trips_v3 %>% 
+  mutate(weekday = wday(started_at, label = TRUE)) %>% 
+  group_by(member_casual, weekday) %>% 
+  summarise(number_of_rides = n()
+            ,average_duration = mean(ride_length)) %>% 
+  arrange(member_casual, weekday)  %>% 
+  ggplot(aes(x = weekday, y = number_of_rides, fill = member_casual)) +
+  geom_col(position = "dodge")
+```
+
+
+Average ride duration by rider type
+
+```{r}
+all_trips_v3 %>% 
+  mutate(weekday = wday(started_at, label = TRUE)) %>% 
+  group_by(member_casual, weekday) %>% 
+  summarise(number_of_rides = n()
+            ,average_duration = mean(ride_length)) %>% 
+  arrange(member_casual, weekday)  %>% 
+  ggplot(aes(x = weekday, y = average_duration, fill = member_casual)) +
+  geom_col(position = "dodge")
+```
+
+The number of Monthly ride by rider type
+
+```{r, fig.width = 12, fig.height=8}
+all_trips_v3 %>% 
+  mutate(month = format(as.Date(date),'%Y-%m')) %>% 
+  group_by(member_casual, month) %>% 
+  summarise(number_of_rides = n()
+            ,average_duration = mean(ride_length)) %>% 
+  arrange(member_casual, month)  %>% 
+  ggplot(aes(x = month, y = number_of_rides, fill = member_casual)) +
+  geom_col(position = "dodge")
+```
+
+Average monthly ride length by rider type
+
+```{r, fig.width = 12, fig.height=8}
+all_trips_v3 %>% 
+  mutate(month = format(as.Date(date),'%Y-%m')) %>% 
+  group_by(member_casual, month) %>% 
+  summarise(number_of_rides = n()
+            ,average_duration = mean(ride_length)) %>% 
+  arrange(member_casual, month)  %>% 
+  ggplot(aes(x = month, y = average_duration, fill = member_casual)) +
+  geom_col(position = "dodge")
+```
+
+Number bike type user by rider type
+
+```{r}
+all_trips_v3 %>% 
+  group_by(member_casual, rideable_type) %>% 
+  summarise(number_of_rides = n()
+            ,average_duration = mean(ride_length)) %>% 
+  arrange(number_of_rides)  %>% 
+  ggplot(aes(x = rideable_type, y = number_of_rides, fill = member_casual)) +
+  geom_col(position = "dodge")
+```
+
+---------------------------------------------------------------------------------------------------------
+
+## What We Got
+
+1. The trips by casual riders population is higher than the members.
+2. Number of members trip in weekday (Mon -  Fri) is higher than casual riders, while in the weekend (Sat – Sun) in the casual rider’s trips is higher than the members.
+3. Casual riders tend to have longest average trip duration than the trip by members.
+4. There is no significant change of the average trip duration of member riders within the last 12 months, while casual riders have significant rise in average trip duration on February 2021.
+5. Casual riders have significant increase in trip number from 2020 to 2021. In Jul-August 2021 casual riders have more trips than members.
+6. Members have higher portion in classic bike use. While casual riders have higher portion in docked bike. For electric bike, both rider types have similar portion.
+
+---------------------------------------------------------------------------------------------------------
+
+## Suggestion
+
+1. Since the weekend trips have more casual riders than annual members, probably the annual members subscribing the annual fee due to routines use for commuting to work (in Weekday Mon-Fri). So Cyclistic need to create campaign focused on casual riders such as discount coupon for tenant in weekend.
+2. According to monthly data, from June to August 2021 the trips by casual riders is higher than annual members. Which we know it is summer holiday occasion. Holiday campaign focused on casual riders is not a bad idea too. Cyclistic can gain engagements during holiday occasion such as discount price for annual membership.
+3. Docked bike tend to use to carrying load with the riders at the same time. Cyclistic can use campaign focused on docked type bike user.
+4. Casual members tend to use the bike-share not as frequent as annual members. So, Cyclistic can made another membership program such as monthly membership.
+5. Digital advertising can be useful especially in weekend and holiday occasion focused on casual riders. Increasing the engagement in such time can be considered.
+
+
+
+ 
+
